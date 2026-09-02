@@ -6,7 +6,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -21,13 +21,16 @@ jobs:
         with:
           node-version: 22
       - run: pnpm install --no-frozen-lockfile
+      - name: Freeze dependency lock once
+        if: github.event_name == 'push' && github.actor != 'github-actions[bot]'
+        run: |
+          if ! git ls-files --error-unmatch pnpm-lock.yaml >/dev/null 2>&1; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add pnpm-lock.yaml
+            git commit -m "chore: freeze dependency lock [skip ci]"
+            git push
+          fi
       - run: pnpm eval
       - run: pnpm check
       - run: pnpm build
-      - name: Preserve generated dependency lock
-        uses: actions/upload-artifact@v4
-        with:
-          name: stagepair-pnpm-lock
-          path: pnpm-lock.yaml
-          if-no-files-found: error
-          retention-days: 1
