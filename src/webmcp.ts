@@ -28,10 +28,7 @@ type ModelContextTool = {
     readOnlyHint?: boolean
     untrustedContentHint?: boolean
   }
-  execute: (
-    input: Record<string, unknown>,
-    options: { signal: AbortSignal },
-  ) => Promise<unknown> | unknown
+  execute: (input: Record<string, unknown>) => Promise<unknown> | unknown
 }
 
 type ModelContextRegisterOptions = {
@@ -65,6 +62,14 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 const asFiniteNumber = (value: unknown, field: string) => {
   const number = Number(value)
   if (!Number.isFinite(number)) throw new Error(`${field} must be a finite number.`)
+  return number
+}
+
+const asRevision = (value: unknown) => {
+  const number = Number(value)
+  if (!Number.isSafeInteger(number) || number < 1) {
+    throw new Error('basedOnRevision must be a positive integer from inspect_stage.')
+  }
   return number
 }
 
@@ -124,12 +129,13 @@ export async function registerStagePairTools(bridge: StagePairToolBridge) {
     name: 'inspect_stage',
     title: 'Inspect the live stage',
     description:
-      'Read the exact current StagePair state: performer, camera, table, door, creative locks, and revision. Use this before proposing a shot so you work from the human’s latest edit.',
+      'Read the exact current StagePair state: performer, camera, table, door, creative locks, and revision. Always call this immediately before setting a camera, then pass its revision as basedOnRevision so a human edit cannot be overwritten by a stale agent move.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true },
     execute: async () => ({
       ...bridge.getSnapshot(),
       collaborationRule: 'Preserve locked creative state. Camera is the agent-owned creative surface unless the UI says otherwise.',
+      handoffRule: 'Pass this exact revision to set_camera as basedOnRevision. If the human edits the stage first, set_camera will reject the stale move and you must inspect again.',
     }),
   })
 
@@ -180,24 +186,51 @@ export async function registerStagePairTools(bridge: StagePairToolBridge) {
 
   await register({
     name: 'set_camera',
-    title: 'Set the camera',
+    title: 'Set the camera from the latest stage revision',
     description:
-      'Move only the camera in the live StagePair scene. This tool never moves the performer, prop, or performance. It rejects the action if the human has locked the camera.',
+      'Move only the camera in the live StagePair scene. basedOnRevision must equal the current stage revision returned by inspect_stage. If the human has edited the stage since inspection, the move is rejected as stale so the agent must inspect again. This tool never moves the performer, prop, or performance, and it rejects changes while the camera is human-locked.',
     inputSchema: {
       type: 'object',
       properties: {
         x: { type: 'number', description: 'Camera X position in stage meters, from -7.2 to 7.2.' },
         z: { type: 'number', description: 'Camera Z position in stage meters, from -7.2 to 7.2.' },
         fov: { type: 'number', description: 'Vertical field of view in degrees, from 28 to 68.' },
+        basedOnRevision: { type: 'integer', minimum: 1, description: 'Exact stage revision returned by the latest inspect_stage call.' },
       },
-      required: ['x', 'z'],
+      required: ['x', 'z', 'basedOnRevision'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false },
-    execute: async (input, { signal }) => {
-      if (signal.aborted) throw new DOMException('Camera action cancelled.', 'AbortError')
+    execute: async (input) => {
       const snapshot = bridge.getSnapshot()
-      if (snapshot.locks.camera) throw new Error('Camera is locked by the human. No camera change was made.')
+      const basedOnRevision = asRevision(input.basedOnRevision)
+
+      if (basedOnRevision !== snapshot.revision) {
+        bridge.onAgentAction({
+          label: 'AGENT / HANDOFF',
+          detail: `Stale R${basedOnRevision} rejected · stage is now R${snapshot.revision}. Re-inspect first.`,
+        })
+        return {
+          ok: false,
+          stale: true,
+          basedOnRevision,
+          currentRevision: snapshot.revision,
+          message: 'The human changed the shared stage after your inspection. Call inspect_stage again and reframe from the latest state.',
+        }
+      }
+
+      if (snapshot.locks.camera) {
+        bridge.onAgentAction({
+          label: 'AGENT / LOCK',
+          detail: `Camera move rejected at R${snapshot.revision} · camera is human-locked.`,
+        })
+        return {
+          ok: false,
+          locked: true,
+          currentRevision: snapshot.revision,
+          message: 'Camera is locked by the human. No camera change was made.',
+        }
+      }
 
       const nextCamera = {
         x: clamp(asFiniteNumber(input.x, 'x'), -CAMERA_LIMIT, CAMERA_LIMIT),
@@ -207,10 +240,11 @@ export async function registerStagePairTools(bridge: StagePairToolBridge) {
       const next = bridge.setCamera(nextCamera)
       bridge.onAgentAction({
         label: 'AGENT / CAMERA',
-        detail: `Camera moved to ${nextCamera.x.toFixed(1)}, ${nextCamera.z.toFixed(1)} · ${Math.round(nextCamera.fov)}°`,
+        detail: `R${basedOnRevision} handed off → camera ${nextCamera.x.toFixed(1)}, ${nextCamera.z.toFixed(1)} · ${Math.round(nextCamera.fov)}°`,
       })
       return {
         ok: true,
+        basedOnRevision,
         revision: next.revision,
         camera: next.camera,
         preserved: ['performer', 'performance', 'table', 'door'],
