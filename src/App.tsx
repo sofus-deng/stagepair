@@ -61,17 +61,29 @@ function useLookAt(
 function Performer({ point }: { point: StagePoint }) {
   return (
     <group position={[point.x, 0, point.z]}>
-      <mesh castShadow position={[0, 1.14, 0]}>
-        <cylinderGeometry args={[0.32, 0.43, 1.45, 20]} />
-        <meshStandardMaterial color="#d9462f" roughness={0.82} />
+      <mesh castShadow position={[0, 1.12, 0]}>
+        <cylinderGeometry args={[0.31, 0.46, 1.48, 20]} />
+        <meshStandardMaterial color="#db4935" roughness={0.86} />
       </mesh>
-      <mesh castShadow position={[0, 2.02, 0]}>
-        <sphereGeometry args={[0.31, 24, 24]} />
-        <meshStandardMaterial color="#272522" roughness={0.96} />
+      <mesh castShadow position={[-0.35, 1.38, 0]} rotation={[0, 0, -0.12]}>
+        <boxGeometry args={[0.12, 0.92, 0.13]} />
+        <meshStandardMaterial color="#ca3f2e" roughness={0.9} />
+      </mesh>
+      <mesh castShadow position={[0.35, 1.38, 0]} rotation={[0, 0, 0.12]}>
+        <boxGeometry args={[0.12, 0.92, 0.13]} />
+        <meshStandardMaterial color="#ca3f2e" roughness={0.9} />
+      </mesh>
+      <mesh castShadow position={[0, 2.03, 0]}>
+        <sphereGeometry args={[0.3, 24, 24]} />
+        <meshStandardMaterial color="#242321" roughness={0.98} />
       </mesh>
       <mesh receiveShadow position={[0, 0.035, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[0.5, 0.56, 48]} />
-        <meshBasicMaterial color="#d9462f" transparent opacity={0.55} />
+        <meshBasicMaterial color="#db4935" transparent opacity={0.64} />
+      </mesh>
+      <mesh receiveShadow position={[0, 0.028, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 4]}>
+        <planeGeometry args={[0.82, 0.028]} />
+        <meshBasicMaterial color="#db4935" transparent opacity={0.72} />
       </mesh>
     </group>
   )
@@ -81,20 +93,25 @@ function Table({ stage }: { stage: StageSnapshot }) {
   return (
     <group position={[stage.table.x, 0, stage.table.z]}>
       <mesh castShadow receiveShadow position={[0, 0.78, 0]}>
-        <boxGeometry args={[stage.table.width, 0.12, stage.table.depth]} />
-        <meshStandardMaterial color="#262421" roughness={0.72} />
+        <boxGeometry args={[stage.table.width, 0.1, stage.table.depth]} />
+        <meshStandardMaterial color="#242321" roughness={0.78} />
       </mesh>
-      {[
-        [-0.86, 0.38],
-        [0.86, 0.38],
-        [-0.86, -0.38],
-        [0.86, -0.38],
-      ].map(([x, z]) => (
-        <mesh key={`${x}-${z}`} castShadow position={[x, 0.39, z]}>
-          <boxGeometry args={[0.09, 0.78, 0.09]} />
-          <meshStandardMaterial color="#262421" roughness={0.8} />
-        </mesh>
-      ))}
+      <mesh castShadow position={[-0.72, 0.38, 0]}>
+        <boxGeometry args={[0.1, 0.76, 0.78]} />
+        <meshStandardMaterial color="#242321" roughness={0.84} />
+      </mesh>
+      <mesh castShadow position={[0.72, 0.38, 0]}>
+        <boxGeometry args={[0.1, 0.76, 0.78]} />
+        <meshStandardMaterial color="#242321" roughness={0.84} />
+      </mesh>
+      <mesh castShadow receiveShadow position={[-0.18, 0.845, 0.08]} rotation={[-Math.PI / 2, 0, -0.18]}>
+        <planeGeometry args={[0.66, 0.44]} />
+        <meshStandardMaterial color="#e8e2d7" roughness={0.96} />
+      </mesh>
+      <mesh castShadow receiveShadow position={[0.16, 0.851, -0.08]} rotation={[-Math.PI / 2, 0, 0.08]}>
+        <planeGeometry args={[0.62, 0.4]} />
+        <meshStandardMaterial color="#dcd4c7" roughness={0.96} />
+      </mesh>
     </group>
   )
 }
@@ -158,62 +175,139 @@ function ViewfinderCamera({ stage }: { stage: StageSnapshot }) {
   return <PerspectiveCamera ref={camera} makeDefault near={0.1} far={45} />
 }
 
-function StageSet({ stage, interactive, onMovePerformer }: {
-  stage: StageSnapshot
-  interactive?: boolean
-  onMovePerformer?: (point: StagePoint) => void
-}) {
-  const onFloorPointerDown = (event: ThreeEvent<PointerEvent>) => {
-    if (!interactive || !onMovePerformer) return
-    event.stopPropagation()
-    onMovePerformer({
-      x: clamp(event.point.x, -3.8, 3.8),
-      z: clamp(event.point.z, -3.6, 3.6),
-    })
-  }
+function FloorTape({ x, z, rotation = 0, length = 0.72 }: { x: number; z: number; rotation?: number; length?: number }) {
+  return (
+    <mesh position={[x, 0.014, z]} rotation={[-Math.PI / 2, 0, rotation]}>
+      <planeGeometry args={[length, 0.035]} />
+      <meshBasicMaterial color="#d9462f" transparent opacity={0.55} />
+    </mesh>
+  )
+}
 
+function StageArchitecture({ door }: { door: StagePoint }) {
   return (
     <>
-      <color attach="background" args={['#d9d3c7']} />
-      <fog attach="fog" args={['#d9d3c7', 9, 22]} />
-      <ambientLight intensity={1.45} />
-      <directionalLight
-        castShadow
-        position={[-3.8, 7.5, 4.8]}
-        intensity={3.1}
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
-      />
-      <spotLight position={[4.5, 5.8, -1.5]} intensity={42} angle={0.38} penumbra={0.9} color="#ffe9c6" />
-
-      <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} onPointerDown={onFloorPointerDown}>
-        <planeGeometry args={[16, 16]} />
-        <meshStandardMaterial color="#eee9df" roughness={0.93} />
+      <mesh receiveShadow position={[-3.85, 2.45, -4.72]} rotation={[0, 0.16, 0]}>
+        <boxGeometry args={[2.2, 4.35, 0.12]} />
+        <meshStandardMaterial color="#bdb5a9" roughness={0.98} />
       </mesh>
-      <gridHelper args={[16, 16, '#bab2a4', '#d5cec1']} position={[0, 0.008, 0]} />
-
-      <mesh receiveShadow position={[0, 2.65, -5]}>
-        <boxGeometry args={[12, 5.3, 0.16]} />
-        <meshStandardMaterial color="#c7c0b4" roughness={0.98} />
-      </mesh>
-      <mesh receiveShadow position={[-5.9, 2.65, 0]}>
-        <boxGeometry args={[0.16, 5.3, 10]} />
-        <meshStandardMaterial color="#cfc8bc" roughness={0.98} />
+      <mesh receiveShadow position={[-3.12, 2.4, -4.61]} rotation={[0, 0.16, 0]}>
+        <boxGeometry args={[0.09, 3.1, 0.16]} />
+        <meshStandardMaterial color="#d9462f" roughness={0.9} />
       </mesh>
 
-      <group position={[stage.door.x, 0, stage.door.z]}>
-        <mesh position={[0, 1.55, 0.04]}>
-          <boxGeometry args={[1.5, 3.1, 0.08]} />
-          <meshStandardMaterial color="#1f1e1c" roughness={0.86} />
+      <group position={[door.x, 0, door.z]}>
+        <mesh castShadow position={[-0.78, 1.65, 0]}>
+          <boxGeometry args={[0.12, 3.3, 0.16]} />
+          <meshStandardMaterial color="#1f1e1c" roughness={0.82} />
         </mesh>
-        <mesh position={[-0.58, 1.62, 0]}>
+        <mesh castShadow position={[0.78, 1.65, 0]}>
+          <boxGeometry args={[0.12, 3.3, 0.16]} />
+          <meshStandardMaterial color="#1f1e1c" roughness={0.82} />
+        </mesh>
+        <mesh castShadow position={[0, 3.24, 0]}>
+          <boxGeometry args={[1.68, 0.12, 0.16]} />
+          <meshStandardMaterial color="#1f1e1c" roughness={0.82} />
+        </mesh>
+        <mesh receiveShadow position={[0, 1.65, -0.055]}>
+          <planeGeometry args={[1.48, 3.05]} />
+          <meshStandardMaterial color="#a9a197" roughness={0.98} />
+        </mesh>
+        <mesh position={[-0.58, 1.62, 0.09]}>
           <sphereGeometry args={[0.045, 12, 12]} />
           <meshStandardMaterial color="#d9462f" />
         </mesh>
       </group>
 
+      <mesh castShadow receiveShadow position={[4.45, 1.72, -2.45]} rotation={[0, -0.52, -0.04]}>
+        <boxGeometry args={[1.35, 3.45, 0.11]} />
+        <meshStandardMaterial color="#2a2825" roughness={0.92} />
+      </mesh>
+
+      <FloorTape x={-2.65} z={-1.72} rotation={0.18} length={1.05} />
+      <FloorTape x={1.82} z={1.7} rotation={-0.72} length={0.86} />
+      <FloorTape x={2.95} z={-2.25} rotation={0.08} length={0.58} />
+    </>
+  )
+}
+
+function HoverMark({ point }: { point: StagePoint }) {
+  return (
+    <group position={[point.x, 0.025, point.z]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.34, 0.37, 48]} />
+        <meshBasicMaterial color="#d9462f" transparent opacity={0.72} />
+      </mesh>
+      <Line points={[[-0.46, 0, 0], [0.46, 0, 0]]} color="#d9462f" lineWidth={0.7} transparent opacity={0.5} />
+      <Line points={[[0, 0, -0.46], [0, 0, 0.46]]} color="#d9462f" lineWidth={0.7} transparent opacity={0.5} />
+    </group>
+  )
+}
+
+function StageSet({ stage, interactive, onMovePerformer }: {
+  stage: StageSnapshot
+  interactive?: boolean
+  onMovePerformer?: (point: StagePoint) => void
+}) {
+  const [hoverPoint, setHoverPoint] = useState<StagePoint | null>(null)
+
+  const boundedPoint = (event: ThreeEvent<PointerEvent>) => ({
+    x: clamp(event.point.x, -3.8, 3.8),
+    z: clamp(event.point.z, -3.6, 3.6),
+  })
+
+  const onFloorPointerDown = (event: ThreeEvent<PointerEvent>) => {
+    if (!interactive || !onMovePerformer) return
+    event.stopPropagation()
+    onMovePerformer(boundedPoint(event))
+  }
+
+  const onFloorPointerMove = (event: ThreeEvent<PointerEvent>) => {
+    if (!interactive) return
+    event.stopPropagation()
+    setHoverPoint(boundedPoint(event))
+  }
+
+  return (
+    <>
+      <color attach="background" args={['#d8d1c6']} />
+      <fog attach="fog" args={['#d8d1c6', 9, 22]} />
+      <ambientLight intensity={1.32} />
+      <directionalLight
+        castShadow
+        position={[-3.8, 7.5, 4.8]}
+        intensity={3.05}
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
+      />
+      <spotLight position={[4.5, 5.8, -1.5]} intensity={42} angle={0.38} penumbra={0.9} color="#ffe9c6" />
+      <spotLight position={[-4.1, 4.8, -2.6]} intensity={18} angle={0.5} penumbra={1} color="#d9e0df" />
+
+      <mesh
+        receiveShadow
+        rotation={[-Math.PI / 2, 0, 0]}
+        onPointerDown={onFloorPointerDown}
+        onPointerMove={onFloorPointerMove}
+        onPointerLeave={() => setHoverPoint(null)}
+      >
+        <planeGeometry args={[16, 16]} />
+        <meshStandardMaterial color="#eee9df" roughness={0.94} />
+      </mesh>
+      <gridHelper args={[16, 16, '#bcb4a8', '#d9d2c6']} position={[0, 0.008, 0]} />
+
+      <mesh receiveShadow position={[0, 2.65, -5]}>
+        <boxGeometry args={[12, 5.3, 0.16]} />
+        <meshStandardMaterial color="#c9c1b6" roughness={0.99} />
+      </mesh>
+      <mesh receiveShadow position={[-5.9, 2.65, 0]}>
+        <boxGeometry args={[0.16, 5.3, 10]} />
+        <meshStandardMaterial color="#d0c8bd" roughness={0.99} />
+      </mesh>
+
+      <StageArchitecture door={stage.door} />
       <Table stage={stage} />
       <Performer point={stage.performer} />
+      {interactive && hoverPoint && !stage.locks.performer ? <HoverMark point={hoverPoint} /> : null}
 
       <ContactShadows position={[0, 0.012, 0]} scale={14} blur={2.7} opacity={0.32} far={5.5} />
     </>
@@ -405,6 +499,11 @@ export default function App() {
 
   const latestFeed = useMemo(() => feed.slice(0, 4), [feed])
   const statusLabel = mcpStatus === 'live' ? 'WEBMCP / LIVE' : mcpStatus === 'checking' ? 'WEBMCP / CHECKING' : mcpStatus === 'error' ? 'WEBMCP / ERROR' : 'WEBMCP / WAITING'
+  const hostNote = mcpStatus === 'live'
+    ? 'AGENT SURFACE LIVE · CAMERA TOOLS REGISTERED TO THIS PAGE'
+    : mcpStatus === 'error'
+      ? 'HOST FOUND · TOOL REGISTRATION NEEDS ATTENTION'
+      : 'HUMAN MODE ACTIVE · OPEN IN A WEBMCP HOST TO ADD THE AGENT CAMERA'
 
   return (
     <main className="experience-shell">
@@ -426,7 +525,7 @@ export default function App() {
             <DirectorStage stage={stage} onMovePerformer={movePerformer} />
             <div className="stage-instruction">
               <span className="instruction-kicker">YOUR HAND</span>
-              <strong>Click the floor to restage the performer.</strong>
+              <strong>Choose a new floor mark. The performer moves; the world stays.</strong>
             </div>
             <div className="stage-axis axis-x">X</div>
             <div className="stage-axis axis-z">Z</div>
@@ -460,6 +559,11 @@ export default function App() {
               <LockButton locked={stage.locks.camera} onClick={() => toggleLock('camera')}>Camera</LockButton>
             </div>
           </div>
+
+          <p className={`host-note ${mcpStatus}`}>
+            <span>{mcpStatus === 'live' ? 'PAIR / CONNECTED' : 'PAIR / HOST'}</span>
+            {hostNote}
+          </p>
         </aside>
 
         <div className="viewfinder-panel">
@@ -527,6 +631,7 @@ export default function App() {
 
       <footer className="footer-line">
         <span>ONE STAGE / TWO COLLABORATORS</span>
+        <span>↳ HUMAN CHANGES THE WORLD · AGENT CHANGES THE VIEW</span>
         <span>WEBMCP CHALLENGE · 2026</span>
       </footer>
     </main>
