@@ -1,0 +1,322 @@
+/* StagePair visual pass 02 — editorial cinema, not AI chrome. */
+
+:root {
+  --ease-out-expo: cubic-bezier(.16, 1, .3, 1);
+}
+
+::selection {
+  background: var(--red);
+  color: var(--paper);
+}
+
+.experience-shell {
+  max-width: 1920px;
+  margin: 0 auto;
+}
+
+.masthead {
+  position: relative;
+}
+
+.wordmark {
+  transform-origin: left top;
+  animation: mark-arrive 900ms var(--ease-out-expo) 80ms both;
+}
+
+.wordmark::after {
+  content: 'CO-DIRECTION STUDY / 001';
+  position: absolute;
+  top: 29px;
+  left: 0;
+  font: 400 7px/1 var(--mono);
+  letter-spacing: .12em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+@keyframes mark-arrive {
+  from { opacity: 0; transform: translateX(-14px); letter-spacing: .04em; }
+  to { opacity: 1; transform: translateX(0); letter-spacing: -.055em; }
+}
+
+.stage-layout {
+  isolation: isolate;
+  animation: stage-reveal 1100ms var(--ease-out-expo) 120ms both;
+}
+
+@keyframes stage-reveal {
+  from { opacity: 0; clip-path: inset(0 0 100% 0); }
+  to { opacity: 1; clip-path: inset(0 0 0 0); }
+}
+
+.director-panel::before,
+.viewfinder-panel::before {
+  position: absolute;
+  top: 44px;
+  z-index: 5;
+  pointer-events: none;
+  font: 400 7px/1 var(--mono);
+  letter-spacing: .12em;
+  color: rgba(28, 27, 25, .42);
+  writing-mode: vertical-rl;
+}
+
+.director-panel::before {
+  content: 'HUMAN FIELD';
+  right: 19px;
+}
+
+.viewfinder-panel::before {
+  content: 'AGENT EYE';
+  left: 19px;
+  color: rgba(241, 238, 230, .54);
+  mix-blend-mode: difference;
+}
+
+.stage-canvas {
+  box-shadow: inset 0 0 80px rgba(35, 32, 27, .08);
+}
+
+.stage-canvas::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, rgba(255,255,255,.16), transparent 22%, transparent 76%, rgba(28,27,25,.06)),
+    radial-gradient(circle at 72% 18%, rgba(255,255,255,.13), transparent 24%);
+  mix-blend-mode: soft-light;
+}
+
+.stage-instruction {
+  transform-origin: left bottom;
+  animation: note-in 650ms var(--ease-out-expo) 850ms both;
+  box-shadow: 0 14px 34px rgba(28, 27, 25, .08);
+}
+
+@keyframes note-in {
+  from { opacity: 0; transform: translateY(10px) rotate(-1deg); }
+  to { opacity: 1; transform: translateY(0) rotate(0); }
+}
+
+.story-rail {
+  position: relative;
+  overflow: hidden;
+}
+
+.story-rail::after {
+  content: '';
+  position: absolute;
+  right: -30px;
+  top: 42%;
+  width: 106px;
+  height: 1px;
+  background: var(--red);
+  opacity: .6;
+  transform: rotate(-62deg);
+  transform-origin: center;
+}
+
+.story-rail h1 {
+  text-wrap: balance;
+  transform-origin: left center;
+  animation: title-in 900ms var(--ease-out-expo) 420ms both;
+}
+
+@keyframes title-in {
+  from { opacity: 0; transform: translateY(22px) skewY(2deg); }
+  to { opacity: 1; transform: translateY(0) skewY(0); }
+}
+
+.lede,
+.roles,
+.lock-panel {
+  animation: rail-item-in 720ms var(--ease-out-expo) both;
+}
+
+.lede { animation-delay: 560ms; }
+.roles { animation-delay: 660ms; }
+.lock-panel { animation-delay: 740ms; }
+
+@keyframes rail-item-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.lock-chip {
+  position: relative;
+  overflow: hidden;
+}
+
+.lock-chip::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: 1px;
+  background: var(--red);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 240ms var(--ease-out-expo);
+}
+
+.lock-chip:hover::after,
+.lock-chip.is-locked::after {
+  transform: scaleX(1);
+}
+
+.viewfinder {
+  box-shadow: 0 25px 55px rgba(28, 27, 25, .14);
+  transform-origin: center;
+  animation: finder-in 1000ms var(--ease-out-expo) 520ms both;
+}
+
+@keyframes finder-in {
+  from { opacity: 0; transform: scale(.965) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.viewfinder::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    linear-gradient(to bottom, rgba(255,255,255,.05), transparent 22%, transparent 78%, rgba(0,0,0,.16)),
+    repeating-linear-gradient(to bottom, transparent 0 3px, rgba(255,255,255,.012) 3px 4px);
+  mix-blend-mode: overlay;
+}
+
+.crosshair {
+  opacity: .8;
+  transition: transform 380ms var(--ease-out-expo), opacity 220ms ease;
+}
+
+.viewfinder:hover .crosshair {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1.12);
+}
+
+.capture-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.capture-button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--ink);
+  transform: translateY(101%);
+  transition: transform 360ms var(--ease-out-expo);
+}
+
+.capture-button:hover {
+  color: var(--paper);
+  padding-left: 10px;
+}
+
+.capture-button:hover::before {
+  transform: translateY(0);
+}
+
+.capture-button,
+.capture-button:hover {
+  transition: color 180ms ease, padding 360ms var(--ease-out-expo);
+}
+
+.lower-deck {
+  position: relative;
+}
+
+.lower-deck::before {
+  content: '03';
+  position: absolute;
+  right: 0;
+  top: 10px;
+  font: 300 clamp(56px, 7vw, 108px)/.8 var(--mono);
+  color: rgba(28, 27, 25, .035);
+  pointer-events: none;
+}
+
+.feed-entry {
+  position: relative;
+  transition: background 200ms ease, padding 260ms var(--ease-out-expo);
+}
+
+.feed-entry:hover {
+  background: rgba(28, 27, 25, .025);
+  padding-left: 6px;
+}
+
+.actor-agent::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--red);
+  transform: translate(-100%, -50%);
+}
+
+.take-card {
+  animation: take-land 620ms var(--ease-out-expo) both;
+}
+
+@keyframes take-land {
+  from { opacity: 0; transform: translateY(12px) rotate(1.2deg); }
+  to { opacity: 1; transform: translateY(0) rotate(0); }
+}
+
+.take-card img {
+  filter: saturate(.88) contrast(1.03);
+  transition: filter 220ms ease, transform 500ms var(--ease-out-expo);
+}
+
+.take-card:hover img {
+  filter: saturate(1) contrast(1.02);
+  transform: scale(1.018);
+}
+
+.mcp-status.live::after {
+  content: '5 TOOLS';
+  font: 400 7px/1 var(--mono);
+  color: var(--red);
+  border-left: 1px solid var(--line);
+  padding-left: 8px;
+  margin-left: 2px;
+}
+
+.footer-line {
+  position: relative;
+}
+
+.footer-line::before {
+  content: '↳ HUMAN CHANGES THE WORLD · AGENT CHANGES THE VIEW';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+@media (max-width: 1120px) {
+  .footer-line::before,
+  .director-panel::before,
+  .viewfinder-panel::before {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
