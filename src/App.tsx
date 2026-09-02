@@ -1,0 +1,497 @@
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Canvas, type ThreeEvent } from '@react-three/fiber'
+import { ContactShadows, OrbitControls, PerspectiveCamera } from '@react-three/drei'
+import * as THREE from 'three'
+import {
+  hasWebMCP,
+  registerStagePairTools,
+  type AgentAction,
+  type StagePoint,
+  type StageSnapshot,
+} from './webmcp'
+
+const initialStage: StageSnapshot = {
+  revision: 1,
+  performer: { x: 0.4, z: -0.45 },
+  camera: { x: 4.9, z: 4.7, fov: 43 },
+  table: { x: -0.8, z: 0.9, width: 2.25, depth: 1.15 },
+  door: { x: 3.25, z: -4.82 },
+  locks: {
+    performance: true,
+    performer: false,
+    prop: true,
+    camera: false,
+  },
+}
+
+type FeedEntry = {
+  id: string
+  actor: 'HUMAN' | 'AGENT' | 'SYSTEM'
+  label: string
+  detail: string
+  revision: number
+}
+
+type TakeStill = {
+  id: string
+  label: string
+  image: string
+  revision: number
+  camera: StageSnapshot['camera']
+  performer: StageSnapshot['performer']
+}
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+
+function useLookAt(
+  ref: React.RefObject<THREE.Object3D | null>,
+  position: StagePoint,
+  target: StagePoint,
+  targetY = 1.35,
+) {
+  useLayoutEffect(() => {
+    const object = ref.current
+    if (!object) return
+    object.position.set(position.x, 1.62, position.z)
+    object.lookAt(target.x, targetY, target.z)
+  }, [position.x, position.z, ref, target.x, target.z, targetY])
+}
+
+function Performer({ point }: { point: StagePoint }) {
+  return (
+    <group position={[point.x, 0, point.z]}>
+      <mesh castShadow position={[0, 1.14, 0]}>
+        <cylinderGeometry args={[0.32, 0.43, 1.45, 20]} />
+        <meshStandardMaterial color="#d9462f" roughness={0.82} />
+      </mesh>
+      <mesh castShadow position={[0, 2.02, 0]}>
+        <sphereGeometry args={[0.31, 24, 24]} />
+        <meshStandardMaterial color="#272522" roughness={0.96} />
+      </mesh>
+      <mesh receiveShadow position={[0, 0.035, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.5, 0.56, 48]} />
+        <meshBasicMaterial color="#d9462f" transparent opacity={0.55} />
+      </mesh>
+    </group>
+  )
+}
+
+function Table({ stage }: { stage: StageSnapshot }) {
+  return (
+    <group position={[stage.table.x, 0, stage.table.z]}>
+      <mesh castShadow receiveShadow position={[0, 0.78, 0]}>
+        <boxGeometry args={[stage.table.width, 0.12, stage.table.depth]} />
+        <meshStandardMaterial color="#262421" roughness={0.72} />
+      </mesh>
+      {[
+        [-0.86, 0.38],
+        [0.86, 0.38],
+        [-0.86, -0.38],
+        [0.86, -0.38],
+      ].map(([x, z]) => (
+        <mesh key={`${x}-${z}`} castShadow position={[x, 0.39, z]}>
+          <boxGeometry args={[0.09, 0.78, 0.09]} />
+          <meshStandardMaterial color="#262421" roughness={0.8} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+function CameraObject({ stage }: { stage: StageSnapshot }) {
+  const group = useRef<THREE.Group>(null)
+  useLookAt(group, stage.camera, stage.performer)
+
+  return (
+    <group ref={group}>
+      <mesh castShadow>
+        <boxGeometry args={[0.44, 0.32, 0.68]} />
+        <meshStandardMaterial color="#191817" roughness={0.44} metalness={0.16} />
+      </mesh>
+      <mesh position={[0, 0, -0.47]} rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[0.17, 0.22, 0.35, 20]} />
+        <meshStandardMaterial color="#d9462f" roughness={0.38} />
+      </mesh>
+      <mesh position={[0, -1.58, 0]}>
+        <cylinderGeometry args={[0.028, 0.055, 2.75, 12]} />
+        <meshStandardMaterial color="#191817" />
+      </mesh>
+    </group>
+  )
+}
+
+function ViewfinderCamera({ stage }: { stage: StageSnapshot }) {
+  const camera = useRef<THREE.PerspectiveCamera>(null)
+  useLookAt(camera, stage.camera, stage.performer)
+
+  useLayoutEffect(() => {
+    if (!camera.current) return
+    camera.current.fov = stage.camera.fov
+    camera.current.updateProjectionMatrix()
+  }, [stage.camera.fov])
+
+  return <PerspectiveCamera ref={camera} makeDefault near={0.1} far={45} />
+}
+
+function StageSet({ stage, interactive, onMovePerformer }: {
+  stage: StageSnapshot
+  interactive?: boolean
+  onMovePerformer?: (point: StagePoint) => void
+}) {
+  const onFloorPointerDown = (event: ThreeEvent<PointerEvent>) => {
+    if (!interactive || !onMovePerformer) return
+    event.stopPropagation()
+    onMovePerformer({
+      x: clamp(event.point.x, -3.8, 3.8),
+      z: clamp(event.point.z, -3.6, 3.6),
+    })
+  }
+
+  return (
+    <>
+      <color attach="background" args={['#d9d3c7']} />
+      <fog attach="fog" args={['#d9d3c7', 9, 22]} />
+      <ambientLight intensity={1.45} />
+      <directionalLight
+        castShadow
+        position={[-3.8, 7.5, 4.8]}
+        intensity={3.1}
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
+      />
+      <spotLight position={[4.5, 5.8, -1.5]} intensity={42} angle={0.38} penumbra={0.9} color="#ffe9c6" />
+
+      <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} onPointerDown={onFloorPointerDown}>
+        <planeGeometry args={[16, 16]} />
+        <meshStandardMaterial color="#eee9df" roughness={0.93} />
+      </mesh>
+      <gridHelper args={[16, 16, '#bab2a4', '#d5cec1']} position={[0, 0.008, 0]} />
+
+      <mesh receiveShadow position={[0, 2.65, -5]}>
+        <boxGeometry args={[12, 5.3, 0.16]} />
+        <meshStandardMaterial color="#c7c0b4" roughness={0.98} />
+      </mesh>
+      <mesh receiveShadow position={[-5.9, 2.65, 0]}>
+        <boxGeometry args={[0.16, 5.3, 10]} />
+        <meshStandardMaterial color="#cfc8bc" roughness={0.98} />
+      </mesh>
+
+      <group position={[stage.door.x, 0, stage.door.z]}>
+        <mesh position={[0, 1.55, 0.04]}>
+          <boxGeometry args={[1.5, 3.1, 0.08]} />
+          <meshStandardMaterial color="#1f1e1c" roughness={0.86} />
+        </mesh>
+        <mesh position={[-0.58, 1.62, 0]}>
+          <sphereGeometry args={[0.045, 12, 12]} />
+          <meshStandardMaterial color="#d9462f" />
+        </mesh>
+      </group>
+
+      <Table stage={stage} />
+      <Performer point={stage.performer} />
+      {!interactive && <CameraObject stage={stage} />}
+
+      <ContactShadows position={[0, 0.012, 0]} scale={14} blur={2.7} opacity={0.32} far={5.5} />
+    </>
+  )
+}
+
+function DirectorStage({ stage, onMovePerformer }: {
+  stage: StageSnapshot
+  onMovePerformer: (point: StagePoint) => void
+}) {
+  return (
+    <Canvas shadows camera={{ position: [7.6, 6.6, 8.4], fov: 42 }} dpr={[1, 1.75]}>
+      <StageSet stage={stage} interactive onMovePerformer={onMovePerformer} />
+      <CameraObject stage={stage} />
+      <OrbitControls
+        makeDefault
+        target={[0, 0.8, -0.45]}
+        enablePan={false}
+        minPolarAngle={0.64}
+        maxPolarAngle={1.25}
+        minDistance={7.2}
+        maxDistance={13.5}
+        dampingFactor={0.08}
+      />
+    </Canvas>
+  )
+}
+
+function Viewfinder({ stage }: { stage: StageSnapshot }) {
+  return (
+    <Canvas
+      shadows
+      dpr={[1, 1.7]}
+      gl={{ preserveDrawingBuffer: true, antialias: true }}
+    >
+      <ViewfinderCamera stage={stage} />
+      <StageSet stage={stage} />
+    </Canvas>
+  )
+}
+
+function LockButton({ locked, children, onClick }: {
+  locked: boolean
+  children: React.ReactNode
+  onClick: () => void
+}) {
+  return (
+    <button className={`lock-chip ${locked ? 'is-locked' : ''}`} onClick={onClick} type="button">
+      <span aria-hidden="true">{locked ? '●' : '○'}</span>
+      {children}
+    </button>
+  )
+}
+
+export default function App() {
+  const [stage, setStage] = useState(initialStage)
+  const stageRef = useRef(stage)
+  const [takes, setTakes] = useState<TakeStill[]>([])
+  const [mcpStatus, setMcpStatus] = useState<'checking' | 'live' | 'unavailable' | 'error'>('checking')
+  const [feed, setFeed] = useState<FeedEntry[]>([
+    {
+      id: uid(),
+      actor: 'SYSTEM',
+      label: 'PAIR / READY',
+      detail: 'You stage the performer. The agent owns the camera.',
+      revision: 1,
+    },
+  ])
+
+  useEffect(() => {
+    stageRef.current = stage
+  }, [stage])
+
+  const pushFeed = useCallback((actor: FeedEntry['actor'], label: string, detail: string, revision?: number) => {
+    const rev = revision ?? stageRef.current.revision
+    setFeed((current) => [
+      { id: uid(), actor, label, detail, revision: rev },
+      ...current,
+    ].slice(0, 6))
+  }, [])
+
+  const onAgentAction = useCallback((action: AgentAction) => {
+    pushFeed('AGENT', action.label, action.detail)
+  }, [pushFeed])
+
+  const movePerformer = useCallback((point: StagePoint) => {
+    const current = stageRef.current
+    if (current.locks.performer) {
+      pushFeed('SYSTEM', 'LOCK / PERFORMER', 'Performer is locked. Unlock it to restage.', current.revision)
+      return
+    }
+    const next: StageSnapshot = {
+      ...current,
+      revision: current.revision + 1,
+      performer: point,
+    }
+    stageRef.current = next
+    setStage(next)
+    pushFeed('HUMAN', 'HUMAN / BLOCKING', `Performer moved to ${point.x.toFixed(1)}, ${point.z.toFixed(1)}`, next.revision)
+  }, [pushFeed])
+
+  const setCameraFromAgent = useCallback((camera: StageSnapshot['camera']) => {
+    const current = stageRef.current
+    const next: StageSnapshot = {
+      ...current,
+      revision: current.revision + 1,
+      camera,
+    }
+    stageRef.current = next
+    setStage(next)
+    return next
+  }, [])
+
+  const captureTake = useCallback(async (label: string) => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    const canvas = document.querySelector<HTMLCanvasElement>('[data-viewfinder] canvas')
+    if (!canvas) throw new Error('Viewfinder canvas is not available.')
+    const snapshot = stageRef.current
+    const id = uid()
+    const image = canvas.toDataURL('image/jpeg', 0.88)
+    const take: TakeStill = {
+      id,
+      label,
+      image,
+      revision: snapshot.revision,
+      camera: { ...snapshot.camera },
+      performer: { ...snapshot.performer },
+    }
+    setTakes((current) => [take, ...current].slice(0, 4))
+    return { id, revision: snapshot.revision }
+  }, [])
+
+  useEffect(() => {
+    if (!hasWebMCP()) {
+      setMcpStatus('unavailable')
+      return
+    }
+    let cleanup: (() => void) | undefined
+    let cancelled = false
+    registerStagePairTools({
+      getSnapshot: () => stageRef.current,
+      setCamera: setCameraFromAgent,
+      captureTake,
+      onAgentAction,
+    })
+      .then((dispose) => {
+        if (cancelled) {
+          dispose()
+          return
+        }
+        cleanup = dispose
+        setMcpStatus('live')
+      })
+      .catch(() => setMcpStatus('error'))
+
+    return () => {
+      cancelled = true
+      cleanup?.()
+    }
+  }, [captureTake, onAgentAction, setCameraFromAgent])
+
+  const toggleLock = useCallback((key: keyof StageSnapshot['locks']) => {
+    const current = stageRef.current
+    const locks = { ...current.locks, [key]: !current.locks[key] }
+    const next: StageSnapshot = { ...current, revision: current.revision + 1, locks }
+    stageRef.current = next
+    setStage(next)
+    pushFeed('HUMAN', 'HUMAN / LOCK', `${key} ${locks[key] ? 'locked' : 'released'}`, next.revision)
+  }, [pushFeed])
+
+  const humanCapture = useCallback(async () => {
+    const result = await captureTake('Human mark')
+    pushFeed('HUMAN', 'HUMAN / TAKE', `Frame marked at revision ${result.revision}`, result.revision)
+  }, [captureTake, pushFeed])
+
+  const latestFeed = useMemo(() => feed.slice(0, 4), [feed])
+  const statusLabel = mcpStatus === 'live' ? 'WEBMCP / LIVE' : mcpStatus === 'checking' ? 'WEBMCP / CHECKING' : mcpStatus === 'error' ? 'WEBMCP / ERROR' : 'WEBMCP / WAITING'
+
+  return (
+    <main className="experience-shell">
+      <header className="masthead">
+        <div className="wordmark" aria-label="StagePair">
+          <span>STAGE</span><i>/</i><span>PAIR</span>
+        </div>
+        <div className="masthead-line" />
+        <div className={`mcp-status ${mcpStatus}`}>
+          <span className="status-dot" />
+          {statusLabel}
+        </div>
+      </header>
+
+      <section className="stage-layout">
+        <div className="director-panel">
+          <div className="panel-index">01 / LIVE STAGE</div>
+          <div className="stage-canvas">
+            <DirectorStage stage={stage} onMovePerformer={movePerformer} />
+            <div className="stage-instruction">
+              <span className="instruction-kicker">YOUR HAND</span>
+              <strong>Click the floor to restage the performer.</strong>
+            </div>
+            <div className="stage-axis axis-x">X</div>
+            <div className="stage-axis axis-z">Z</div>
+          </div>
+        </div>
+
+        <aside className="story-rail">
+          <p className="eyebrow">A WEBMCP CO-DIRECTION STUDY</p>
+          <h1>Two hands.<br />One frame.</h1>
+          <p className="lede">
+            You stage the performance.<br />Your agent finds the shot.<br />Neither rebuilds the world.
+          </p>
+
+          <div className="roles">
+            <div>
+              <span>HUMAN / 01</span>
+              <strong>Blocking</strong>
+            </div>
+            <div>
+              <span>AGENT / 02</span>
+              <strong>Camera</strong>
+            </div>
+          </div>
+
+          <div className="lock-panel">
+            <span className="micro-label">CREATIVE LOCKS</span>
+            <div className="lock-list">
+              <LockButton locked={stage.locks.performance} onClick={() => toggleLock('performance')}>Performance</LockButton>
+              <LockButton locked={stage.locks.performer} onClick={() => toggleLock('performer')}>Performer</LockButton>
+              <LockButton locked={stage.locks.prop} onClick={() => toggleLock('prop')}>Prop</LockButton>
+              <LockButton locked={stage.locks.camera} onClick={() => toggleLock('camera')}>Camera</LockButton>
+            </div>
+          </div>
+        </aside>
+
+        <div className="viewfinder-panel">
+          <div className="panel-index">02 / AGENT CAMERA</div>
+          <div className="viewfinder" data-viewfinder>
+            <Viewfinder stage={stage} />
+            <div className="frame-corners" aria-hidden="true"><i /><i /><i /><i /></div>
+            <div className="crosshair" aria-hidden="true"><span /><span /></div>
+            <div className="viewfinder-meta top">
+              <span>CAM / B</span>
+              <span>REV {String(stage.revision).padStart(2, '0')}</span>
+            </div>
+            <div className="viewfinder-meta bottom">
+              <span>{stage.camera.fov.toFixed(0)}°</span>
+              <span>X {stage.camera.x.toFixed(1)} / Z {stage.camera.z.toFixed(1)}</span>
+            </div>
+          </div>
+          <button type="button" className="capture-button" onClick={humanCapture}>
+            <span>MARK THIS FRAME</span>
+            <b>↗</b>
+          </button>
+        </div>
+      </section>
+
+      <section className="lower-deck">
+        <div className="pair-feed">
+          <div className="lower-heading">
+            <span>PAIR FEED</span>
+            <em>shared state · rev {stage.revision}</em>
+          </div>
+          <div className="feed-entries">
+            {latestFeed.map((entry) => (
+              <article className={`feed-entry actor-${entry.actor.toLowerCase()}`} key={entry.id}>
+                <span>{entry.label}</span>
+                <p>{entry.detail}</p>
+                <b>{String(entry.revision).padStart(2, '0')}</b>
+              </article>
+            ))}
+          </div>
+        </div>
+
+        <div className="contact-sheet">
+          <div className="lower-heading">
+            <span>CONTACT SHEET</span>
+            <em>{takes.length ? `${takes.length} frame${takes.length > 1 ? 's' : ''}` : 'mark a frame'}</em>
+          </div>
+          <div className="takes">
+            {takes.length === 0 ? (
+              <div className="empty-take">
+                <span>NO. 00</span>
+                <p>Human and agent captures land here with the exact shared revision.</p>
+              </div>
+            ) : takes.map((take, index) => (
+              <figure key={take.id} className="take-card">
+                <img src={take.image} alt={`${take.label}, revision ${take.revision}`} />
+                <figcaption>
+                  <span>{String(index + 1).padStart(2, '0')} · {take.label}</span>
+                  <b>R{take.revision}</b>
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <footer className="footer-line">
+        <span>ONE STAGE / TWO COLLABORATORS</span>
+        <span>WEBMCP CHALLENGE · 2026</span>
+      </footer>
+    </main>
+  )
+}
