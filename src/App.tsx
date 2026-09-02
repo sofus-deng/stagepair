@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Canvas, type ThreeEvent } from '@react-three/fiber'
-import { ContactShadows, OrbitControls, PerspectiveCamera } from '@react-three/drei'
+import { Canvas, useFrame, type ThreeEvent } from '@react-three/fiber'
+import { ContactShadows, Line, OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import * as THREE from 'three'
 import {
   hasWebMCP,
@@ -109,7 +109,7 @@ function CameraObject({ stage }: { stage: StageSnapshot }) {
         <boxGeometry args={[0.44, 0.32, 0.68]} />
         <meshStandardMaterial color="#191817" roughness={0.44} metalness={0.16} />
       </mesh>
-      <mesh position={[0, 0, -0.47]} rotation={[Math.PI / 2, 0, 0]}>
+      <mesh position={[0, 0, 0.47]} rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[0.17, 0.22, 0.35, 20]} />
         <meshStandardMaterial color="#d9462f" roughness={0.38} />
       </mesh>
@@ -123,13 +123,37 @@ function CameraObject({ stage }: { stage: StageSnapshot }) {
 
 function ViewfinderCamera({ stage }: { stage: StageSnapshot }) {
   const camera = useRef<THREE.PerspectiveCamera>(null)
-  useLookAt(camera, stage.camera, stage.performer)
+  const targetPosition = useMemo(() => new THREE.Vector3(), [])
+  const targetQuaternion = useMemo(() => new THREE.Quaternion(), [])
+  const targetCamera = useMemo(() => new THREE.PerspectiveCamera(), [])
 
   useLayoutEffect(() => {
     if (!camera.current) return
+    camera.current.position.set(stage.camera.x, 1.62, stage.camera.z)
+    camera.current.lookAt(stage.performer.x, 1.35, stage.performer.z)
     camera.current.fov = stage.camera.fov
     camera.current.updateProjectionMatrix()
-  }, [stage.camera.fov])
+  }, [])
+
+  useFrame((_, delta) => {
+    const current = camera.current
+    if (!current) return
+
+    const positionAlpha = 1 - Math.exp(-7.5 * delta)
+    const rotationAlpha = 1 - Math.exp(-9 * delta)
+    const lensAlpha = 1 - Math.exp(-8 * delta)
+
+    targetPosition.set(stage.camera.x, 1.62, stage.camera.z)
+    current.position.lerp(targetPosition, positionAlpha)
+
+    targetCamera.position.copy(current.position)
+    targetCamera.lookAt(stage.performer.x, 1.35, stage.performer.z)
+    targetQuaternion.copy(targetCamera.quaternion)
+    current.quaternion.slerp(targetQuaternion, rotationAlpha)
+
+    current.fov = THREE.MathUtils.lerp(current.fov, stage.camera.fov, lensAlpha)
+    current.updateProjectionMatrix()
+  })
 
   return <PerspectiveCamera ref={camera} makeDefault near={0.1} far={45} />
 }
@@ -190,7 +214,6 @@ function StageSet({ stage, interactive, onMovePerformer }: {
 
       <Table stage={stage} />
       <Performer point={stage.performer} />
-      {!interactive && <CameraObject stage={stage} />}
 
       <ContactShadows position={[0, 0.012, 0]} scale={14} blur={2.7} opacity={0.32} far={5.5} />
     </>
@@ -204,6 +227,20 @@ function DirectorStage({ stage, onMovePerformer }: {
   return (
     <Canvas shadows camera={{ position: [7.6, 6.6, 8.4], fov: 42 }} dpr={[1, 1.75]}>
       <StageSet stage={stage} interactive onMovePerformer={onMovePerformer} />
+      <Line
+        points={[
+          [stage.camera.x, 0.055, stage.camera.z],
+          [stage.performer.x, 0.055, stage.performer.z],
+        ]}
+        color="#d9462f"
+        lineWidth={0.8}
+        transparent
+        opacity={0.34}
+        dashed
+        dashScale={2.8}
+        dashSize={0.35}
+        gapSize={0.28}
+      />
       <CameraObject stage={stage} />
       <OrbitControls
         makeDefault
@@ -255,7 +292,7 @@ export default function App() {
       id: uid(),
       actor: 'SYSTEM',
       label: 'PAIR / READY',
-      detail: 'You stage the performer. The agent owns the camera.',
+      detail: 'Human stages the performer. Agent frames the camera. Every handoff is revision-bound.',
       revision: 1,
     },
   ])
@@ -400,7 +437,7 @@ export default function App() {
           <p className="eyebrow">A WEBMCP CO-DIRECTION STUDY</p>
           <h1>Two hands.<br />One frame.</h1>
           <p className="lede">
-            You stage the performance.<br />Your agent finds the shot.<br />Neither rebuilds the world.
+            You stage the performance.<br />Your agent finds the shot.<br />Every handoff uses the latest shared revision.
           </p>
 
           <div className="roles">
